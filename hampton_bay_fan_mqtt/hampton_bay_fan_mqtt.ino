@@ -74,6 +74,7 @@ struct fan
   uint8_t fanSpeed;
 };
 fan fans[16];
+fan previousFans[16];           // used so that state only transmits when it changes
 
 
 // The ID returned from the RF code appears to be inversed and reversed
@@ -145,7 +146,15 @@ void transmitState(int fanId) {
   ELECHOUSE_cc1101.SetRx();
   mySwitch.enableReceive(RX_PIN); // Receiver on
 
-  postStateUpdate(fanId);
+  if (fans[fanId].fanState != previousFans[fanId].fanState) {
+    previousFans[fanId].fanState = fans[fanId].fanState;
+    previousFans[fanId].fanSpeed = fans[fanId].fanSpeed;
+    postFanStateUpdate(fanId);
+  }
+  if (fans[fanId].lightState != previousFans[fanId].lightState) {
+    previousFans[fanId].lightState = fans[fanId].lightState;
+    postLightStateUpdate(fanId);
+  }
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -214,14 +223,18 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-void postStateUpdate(int id) {
+void postLightStateUpdate(int id) {
+  char outTopic[100];
+  sprintf(outTopic, "%s/%s/light/state", BASE_TOPIC, idStrings[id]);
+  client.publish(outTopic, fans[id].lightState ? "ON":"OFF", true);
+}
+
+void postFanStateUpdate(int id) {
   char outTopic[100];
   sprintf(outTopic, "%s/%s/on/state", BASE_TOPIC, idStrings[id]);
   client.publish(outTopic, fans[id].fanState ? "ON":"OFF", true);
   sprintf(outTopic, "%s/%s/speed/state", BASE_TOPIC, idStrings[id]);
   client.publish(outTopic, fanStateTable[fans[id].fanSpeed], true);
-  sprintf(outTopic, "%s/%s/light/state", BASE_TOPIC, idStrings[id]);
-  client.publish(outTopic, fans[id].lightState ? "ON":"OFF", true);
 }
 
 void reconnect() {
@@ -304,13 +317,25 @@ void loop() {
         int fan = (states & 0b01111111) >> 5;
         if(fan == 0) {
           fans[dipId].fanState = false;
+          if (fans[dipId].fanState != previousFans[dipId].fanState) {
+            previousFans[dipId].fanState = fans[dipId].fanState;
+            postFanStateUpdate(dipId);
+          }
         }
         else {
           fans[dipId].fanState = true;
           fans[dipId].fanSpeed = fan;
+          if (fans[dipId].fanState != previousFans[dipId].fanState) {
+            previousFans[dipId].fanState = fans[dipId].fanState;
+            previousFans[dipId].fanSpeed = fans[dipId].fanSpeed;
+            postFanStateUpdate(dipId);
+          }
         }
         fans[dipId].lightState = light;
-        postStateUpdate(dipId);
+        if (fans[dipId].lightState != previousFans[dipId].lightState) {
+          previousFans[dipId].lightState = fans[dipId].lightState;
+          postLightStateUpdate(dipId);
+        }
       }
     }
     mySwitch.resetAvailable();
