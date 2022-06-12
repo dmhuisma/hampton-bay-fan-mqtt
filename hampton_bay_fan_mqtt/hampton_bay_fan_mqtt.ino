@@ -1,3 +1,8 @@
+
+//
+// NOTE: works best with esp8266 board lib version 2.5.2
+//
+
 #include <ELECHOUSE_CC1101_SRC_DRV.h>
 #include <RCSwitch.h>
 #include <ESP8266WiFi.h>
@@ -12,8 +17,8 @@
 #define MQTT_PORT 1883
 #define MQTT_USER ""
 #define MQTT_PASS ""
-#define MQTT_CLIENT_NAME "HAMPTONBAY"
-#define BASE_TOPIC "home/hamptonbay"
+#define MQTT_CLIENT_NAME "ceiling_fan"
+#define BASE_TOPIC "home/master_bedroom"
 
 #define STATUS_TOPIC BASE_TOPIC "/status"
 #define SUBSCRIBE_TOPIC_ON_SET BASE_TOPIC "/+/on/set"
@@ -37,7 +42,7 @@
 
 // Set CC1101 frequency
 // 303.631 determined from FAN-9T remote tramsmissions
-#define FREQUENCY     303.631
+#define FREQUENCY     303.912
 
 // RC-switch settings
 #define RF_PROTOCOL 6
@@ -96,11 +101,16 @@ void setup_wifi() {
   Serial.print("Connecting to ");
   Serial.println(WIFI_SSID);
 
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    int startTime = millis();
+    while(WiFi.status() != WL_CONNECTED) {
+      if(millis() - startTime > 10000) { 
+        Serial.print(".");
+        break;
+      }  
+      delay(100);
+    }
   }
 
   randomSeed(micros());
@@ -128,9 +138,12 @@ void transmitState(int fanId) {
   int rfCode = dipToRfIds[fanId] << 14 | fans[fanId].lightState << 7 | fanRf << 5;
   
   mySwitch.send(rfCode, 21);      // send 21 bit code
-  ELECHOUSE_cc1101.SetRx();      // set Receive on
-  mySwitch.disableTransmit();   // set Transmit off
-  mySwitch.enableReceive(RX_PIN);   // Receiver on
+
+  mySwitch.disableTransmit();     // set Transmit off
+  ELECHOUSE_cc1101.SetRx();       // set Receive on
+  ELECHOUSE_cc1101.SetTx();
+  ELECHOUSE_cc1101.SetRx();
+  mySwitch.enableReceive(RX_PIN); // Receiver on
 
   postStateUpdate(fanId);
 }
@@ -247,14 +260,14 @@ void setup() {
     fans[i].fanSpeed = FAN_LOW;
   }
 
+  setup_wifi();
+  client.setServer(MQTT_HOST, MQTT_PORT);
+  client.setCallback(callback);
+
   ELECHOUSE_cc1101.Init();
   ELECHOUSE_cc1101.setMHZ(FREQUENCY);
   ELECHOUSE_cc1101.SetRx();
   mySwitch.enableReceive(RX_PIN);
-
-  setup_wifi();
-  client.setServer(MQTT_HOST, MQTT_PORT);
-  client.setCallback(callback);
 }
 
 void loop() {
